@@ -24,24 +24,21 @@ using namespace cv;
 using namespace std;
 using namespace Eigen;
 
-ArDPPTU *myPTZ=0;
-ArRobot *myRobot=0;
-
 #define HOMEIMAGE "data/home.pgm"
 #define HOMEKEY "data/home.key"
-#define IMG_WIDTH 1024
-#define IMG_HEIGHT 768
-#define PANAMT 0
-#define DEFTILT 5
+#define IMG_WIDTH 1181
+#define IMG_HEIGHT 180
 #define DISTANCE 600
 #define EPS 2
+#define PERCENT 40
 
 /* -------------------- Local function prototypes ------------------------ */
-
 Vector2d FindMatches(Image im1, Keypoint keys1, Image im2, Keypoint keys2, int imageCount);
 Keypoint CheckForMatch(Keypoint key, Keypoint klist);
 int DistSquared(Keypoint k1, Keypoint k2);
 Image CombineImagesHorizontally(Image im1, Image im2);
+Image CombineImagesVertically(Image im1, Image im2);
+
 /*----------------------------- Routines ----------------------------------*/
 int main (int argc, char **argv)
 {
@@ -75,111 +72,97 @@ int main (int argc, char **argv)
       return 1;
     }
 
-  ArDPPTU thePTZ(&robot); // pan-tilt base, mode DPPU
-  myPTZ = &thePTZ;
-  myPTZ->reset(); 
-  ArUtil::sleep(1000);
-
   /* INITIALIZATION OF ROBOT*/
   robot.runAsync(true); // commands processed in separate thread
   robot.enableMotors(); // turn the power to the motors on
   //  robot.addRangeDevice(&sonar); // add sonar (THIS IS UNNECCESARY FOR VH)
   ArUtil::sleep(1000); // sleep time allows robot to initialise sonar, motors, etc
 
-  if (myPTZ==0) {
-    printf("PTZ unit not initialized\n");
-    return 1;
-  }
-
   robot.setRotVelMax(30);
   robot.setTransVelMax(80);
 
   /*** CAPTURE HOME IMAGE ***/
-  // cout<<endl<<"Align robot towards goal location, to capture home image.."<<endl
-  //     <<"Then press ENTER.";
-  // cin.get();
-  // myPTZ->panTilt(PANAMT,DEFTILT);
-  // ArUtil::sleep(1000);
-  // Mat homeframe;
-  // IplImage *homeImage, *homeGray;
-  // VideoCapture cap(0);
-  // if(!cap.isOpened())  // check whether camera has been found or not
-  //   {
-  //     cerr << "Error: Cannot open image\n";
-  //     return -1;
-  //   }
-  // /* capture webcam into frame */
-  // cout<<"Capturing home image.."<<endl;
-  // cap >> homeframe;
-  // ArUtil::sleep(1000);
-  // /* capture webcam and store it as temphome.jpg */
-  // imwrite("data/temphome.jpg",homeframe);
-  // homeImage=cvLoadImage("data/temphome.jpg",1);
-  // homeGray=cvCreateImage(cvGetSize(homeImage),IPL_DEPTH_8U,1);
-  // cvCvtColor(homeImage,homeGray,CV_RGB2GRAY);
-  // cvSaveImage("data/home.pgm",homeGray);
-  // remove("data/temphome.jpg");
-
-  // myPTZ->reset(); 
+  cout<<endl<<"Place robot at goal location, to capture home image.."<<endl
+      <<"Then press ENTER.";
+  cin.get();
+  ArUtil::sleep(1000);
+  IplImage *homeImage, *homeGray;
+  system("mplayer tv:// -tv width=1024:height=768:device=/dev/video1:outfmt=rgb24 -frames 1 -vo jpeg:outdir=data");
+  sleep(1);
+  system("mv data/00000001.jpg data/home.jpg");
+  sleep(1);
+  system("./omnicamtools_test calib_results.txt data/home.jpg");
+  sleep(1);
+  system("mv unwarped_image.jpg data/temphome.jpg");
+ 
+  cout<<"Home image captured and unwarped."<<endl;
   
-  // /*** OBTAIN SIFT FEATURES ***/
-  // system("./sift <data/home.pgm > data/home.key");
-  // /*** -------------------- ***/
-
-  // cap.release();
+  homeImage=cvLoadImage("data/temphome.jpg",1);
+  homeGray=cvCreateImage(cvGetSize(homeImage),IPL_DEPTH_8U,1);
+  cvCvtColor(homeImage,homeGray,CV_RGB2GRAY);
+  cvReleaseImage(&homeImage);
+  cout<<"Resizing home image.."<<endl;
+  homeImage=cvCreateImage( cvSize((int)(homeGray->width*PERCENT/100),(int)(homeGray->height*PERCENT/100)), homeGray->depth, homeGray->nChannels );
+  cvResize(homeGray,homeImage);
+  cvReleaseImage(&homeGray);
+  cvSaveImage("data/home.pgm",homeImage);
+  //  remove("data/temphome.jpg");
+  //  remove("data/home.jpg");
   
+  sleep(1);
+  
+  /*** OBTAIN SIFT FEATURES ***/
+  cout<<endl<<"Obtaining SIFT features from home image and storing as home.key.."<<endl;
+  system("./sift <data/home.pgm > data/home.key");
+  /*** -------------------- ***/
+  sleep(2);
   /******************************/
-
 
   cout<<endl<<"Now position robot away from goal location, "
       <<"and press ENTER to home";
   cin.get();
 
-  Mat frame;
   IplImage *image,*gray;
   char buf[100];
-
-  //  bool homingComplete=false;
+  vector<double> angleList; angleList.clear();
+  vector<int> signList; signList.clear();
 
   do
     {  
       robot.stop();
-      myPTZ->panTilt(PANAMT,DEFTILT);
       ArUtil::sleep(1000);
-      /*** OPENCV VIDEO CAPTURE ***/
-      VideoCapture cap(0); // open the default camera, store in cap
-      if(!cap.isOpened())  // check whether camera has been found or not
-	{
-	  cerr << "Error: Cannot open image\n";
-	  return -1;
-	}
-      cout<<"Step #"<<imageCount<<endl;
-      /* capture webcam into frame */
-      cout<<"Capturing image.."<<endl;
-      cap >> frame;
-      sprintf(buf,"data/temp.jpg");
-      /* capture webcam and store it as temp.jpg */
-      imwrite(buf,frame);
+
+      system("mplayer tv:// -tv width=1024:height=768:device=/dev/video1:outfmt=rgb24 -frames 1 -vo jpeg:outdir=data");
+      sleep(1);
+      system("mv data/00000001.jpg data/image.jpg");
+      sleep(1);
+      system("./omnicamtools_test calib_results.txt data/image.jpg");
+      sleep(1);
+      sprintf(buf,"mv data/image.jpg data/img%d.jpg",imageCount);
+      system(buf);
+      system("mv unwarped_image.jpg data/image.jpg");
+      
+      cout<<endl<<"Current image captured and unwarped."<<endl;
+
       /* load temp.jpg into img */
-      image=cvLoadImage(buf,1);
+      image=cvLoadImage("data/image.jpg",1);
       ArUtil::sleep(1000);
       gray=cvCreateImage(cvGetSize(image),IPL_DEPTH_8U,1);
       cvCvtColor(image,gray,CV_RGB2GRAY);
+      cvReleaseImage(&image);
+      image=cvCreateImage( cvSize((int)(gray->width*PERCENT/100),(int)(gray->height*PERCENT/100)), gray->depth, gray->nChannels );
+      cvResize(gray,image);
       sprintf(imageName,"data/image%d.pgm",imageCount);
-      cvSaveImage(imageName,gray);
+      cvSaveImage(imageName,image);
       sprintf(keypointName,"data/image%d.key",imageCount);
-      /*** END OPENCV VIDEO CAPTURE ***/
-
-      myPTZ->reset(); 
+      remove("data/image.jpg");
+      cvReleaseImage(&gray);
+      cvReleaseImage(&image);
 
       /*** OBTAIN SIFT FEATURES ***/
       snprintf(command,256,"./sift <%s >%s",imageName,keypointName);
       system(command);
       /*** -------------------- ***/
-
-      remove("data/temp.jpg");
-
-      cap.release();
 
       im1=ReadPGMFile(HOMEIMAGE);
       k1=ReadKeyFile(HOMEKEY);
@@ -188,8 +171,10 @@ int main (int argc, char **argv)
   
       /* determine movement vector using SIFT features */
       move=FindMatches(im1, k1, im2, k2,imageCount);
-      alpha=-move(0);
-      alpha*=180/(M_PI);      
+      alpha=move(0)*180/M_PI;
+
+      angleList.push_back(alpha);
+      signList.push_back((int)move(1));
 
       if(alpha!=alpha)
 	{
@@ -213,7 +198,16 @@ int main (int argc, char **argv)
 	}
       imageCount++;
     }
-  while(true);
+  while(imageCount<10);
+
+  cout<<"Log of all angles and direction:"<<endl;
+  vector<double>::iterator dit;
+  vector<int>::iterator iit;
+  for(dit=angleList.begin(),iit=signList.begin();dit!=angleList.end();dit++,iit++)
+    cout<<"\talpha="<<*dit<<", sign="<<*iit<<endl;
+
+  angleList.clear();
+  signList.clear();
 
   return 0;
 }
@@ -231,42 +225,36 @@ Vector2d FindMatches(Image im1, Keypoint keys1, Image im2, Keypoint keys2, int i
   double alpha=0,delta=0;
   //  vector< Vector2d,aligned_allocator<Vector2d> > unitVec;
   Image result;
-  result=CombineImagesHorizontally(im1,im2);
+  result=CombineImagesVertically(im1,im2);
 
-  vector<Keypoint> matchedK1, matchedK2;
   vector<Keypoint> mPOS1, mPOS2, mNEG1, mNEG2;
   vector<double> thetaPOS, thetaNEG;
   Vector2d move;
 
   /* Match the keys in list keys1 to their best matches in keys2 */
-  for(k=keys1;k!=NULL;k=k->next)
+  for(k=keys1;k!=NULL;k=k->next) // home image
     {
-      match=CheckForMatch(k,keys2);  
+      match=CheckForMatch(k,keys2); // k = home img, keys2 = current image
       if(match!=NULL) 
 	{
 	  delta = k->scale - match->scale;
-
 	  DrawLine(result, (int) k->row, (int) k->col,
-		   (int) (match->row),(int) match->col + im1->cols);
-
-	  // STORE MATCHED KEYPOINT VECTOR
-	  matchedK1.push_back(k);
-	  matchedK2.push_back(match);
+		   (int) (match->row + im1->rows), (int) match->col);
 
 	  // STORE mPOS and mNEG
 	  if(delta>=0)
 	    {
 	      mPOS1.push_back(k);
 	      mPOS2.push_back(match);
-	      // 70 degrees field of view
-	      thetaPOS.push_back((k->col*(70/IMG_WIDTH)*(M_PI/180)) - (35*M_PI/180));
+	      // 360 degrees field of view
+	      thetaPOS.push_back((match->col*(2*M_PI/IMG_WIDTH)));// - M_PI);
 	    }
 	  if(delta<0)
 	    {
 	      mNEG1.push_back(k);
 	      mNEG2.push_back(match);
-	      // 70 degrees field of view
-	      thetaNEG.push_back((k->col*(70/IMG_WIDTH)*(M_PI/180)) - (35*M_PI/180));
+	      // 360 degrees field of view
+	      thetaNEG.push_back((match->col*(2*M_PI/IMG_WIDTH)));// - M_PI);
 	    }
 	  count++;
 	}//end if(match..
@@ -317,33 +305,29 @@ Vector2d FindMatches(Image im1, Keypoint keys1, Image im2, Keypoint keys2, int i
   sintheta=0; costheta=0;
 
   double s,c;
+  cout<<"sin(POSthetaAverage) = "<<sin(POSthetaAverage)<<endl;
+  cout<<"cos(POSthetaAverage) = "<<cos(POSthetaAverage)<<endl;
+  cout<<"sin(NEGthetaAverage) = "<<sin(NEGthetaAverage)<<endl;
+  cout<<"cos(NEGthetaAverage) = "<<cos(NEGthetaAverage)<<endl;
 
   s=thetaPOS.size()*sin(POSthetaAverage) + thetaNEG.size()*(sin(NEGthetaAverage)+M_PI);
   c=thetaPOS.size()*cos(POSthetaAverage) + thetaNEG.size()*(cos(NEGthetaAverage)+M_PI);
 
   cout<<"thetaPOS.size(): "<<thetaPOS.size()<<" thetaNEG.size(): "<<thetaNEG.size()<<endl;
 
-  double sign=0;
-  if(fabs(atan2(s,c))>=(M_PI/2))
-    {
-      sign=-1;
-      alpha=-1;
-    }
-  else
-    {
-      sign=1;
-      alpha=1;
-    }
+  double sign=1;
+  cout<<"s = "<<s<<", c = "<<c<<endl;
+  cout<<"atan2(s,c) = "<<atan2(s,c)<<endl;
+  alpha=atan2(s,c);
 
   /** CLEAR MEMORY **/
-  matchedK1.clear(); matchedK2.clear();
   mPOS1.clear(); mPOS2.clear();
   mNEG1.clear(); mNEG2.clear();
   thetaPOS.clear(); thetaNEG.clear();
 
-  alpha*=atan2(s,c);
+  move(0)=alpha;
+  move(1)=sign;
 
-  move << alpha,sign;
   return move;
 
 }//end void FindMatches..
@@ -420,3 +404,27 @@ Image CombineImagesHorizontally(Image im1, Image im2)
   return result;
 }
 
+Image CombineImagesVertically(Image im1, Image im2)
+{
+  int rows, cols, r, c;
+  Image result;
+
+  rows = im1->rows + im2->rows;
+  cols = MAX(im1->cols, im2->cols);
+  result = CreateImage(rows, cols);
+
+  /* Set all pixels to 0,5, so that blank regions are grey. */
+  for (r = 0; r < rows; r++)
+    for (c = 0; c < cols; c++)
+      result->pixels[r][c] = 0.5;
+
+  /* Copy images into result. */
+  for (r = 0; r < im1->rows; r++)
+    for (c = 0; c < im1->cols; c++)
+      result->pixels[r][c] = im1->pixels[r][c];
+  for (r = 0; r < im2->rows; r++)
+    for (c = 0; c < im2->cols; c++)
+      result->pixels[r + im1->rows][c] = im2->pixels[r][c];
+
+  return result;
+}
