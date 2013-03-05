@@ -26,11 +26,11 @@ using namespace Eigen;
 
 #define HOMEIMAGE "data/home.pgm"
 #define HOMEKEY "data/home.key"
-#define IMG_WIDTH 1181
-#define IMG_HEIGHT 180
-#define DISTANCE 600
+#define IMG_WIDTH 1771
+#define IMG_HEIGHT 270
+#define DISTANCE 400
 #define EPS 2
-#define PERCENT 40
+#define PERCENT 60
 
 /* -------------------- Local function prototypes ------------------------ */
 Vector2d FindMatches(Image im1, Keypoint keys1, Image im2, Keypoint keys2, int imageCount);
@@ -38,7 +38,7 @@ Keypoint CheckForMatch(Keypoint key, Keypoint klist);
 int DistSquared(Keypoint k1, Keypoint k2);
 Image CombineImagesHorizontally(Image im1, Image im2);
 Image CombineImagesVertically(Image im1, Image im2);
-
+IplImage *rotateImage(const IplImage *src, float angleDegrees);
 /*----------------------------- Routines ----------------------------------*/
 int main (int argc, char **argv)
 {
@@ -105,8 +105,9 @@ int main (int argc, char **argv)
   homeImage=cvCreateImage( cvSize((int)(homeGray->width*PERCENT/100),(int)(homeGray->height*PERCENT/100)), homeGray->depth, homeGray->nChannels );
   cvResize(homeGray,homeImage);
   cvReleaseImage(&homeGray);
+  homeImage=rotateImage(homeImage,180); // rotate by 180 deg
   cvSaveImage("data/home.pgm",homeImage);
-  //  remove("data/temphome.jpg");
+  remove("data/temphome.jpg");
   //  remove("data/home.jpg");
   
   sleep(1);
@@ -153,6 +154,7 @@ int main (int argc, char **argv)
       image=cvCreateImage( cvSize((int)(gray->width*PERCENT/100),(int)(gray->height*PERCENT/100)), gray->depth, gray->nChannels );
       cvResize(gray,image);
       sprintf(imageName,"data/image%d.pgm",imageCount);
+      image=rotateImage(image,180); // rotate by 180 deg
       cvSaveImage(imageName,image);
       sprintf(keypointName,"data/image%d.key",imageCount);
       remove("data/image.jpg");
@@ -211,9 +213,6 @@ int main (int argc, char **argv)
 
   return 0;
 }
-
-
-
 /* Given a pair of images and their keypoints, pick the first keypoint
    from one image and find its closest match in the second set of
    keypoints.
@@ -247,14 +246,14 @@ Vector2d FindMatches(Image im1, Keypoint keys1, Image im2, Keypoint keys2, int i
 	      mPOS1.push_back(k);
 	      mPOS2.push_back(match);
 	      // 360 degrees field of view
-	      thetaPOS.push_back((match->col*(2*M_PI/IMG_WIDTH)));// - M_PI);
+	      thetaPOS.push_back((match->col*(2*M_PI/IMG_WIDTH)) - M_PI);
 	    }
 	  if(delta<0)
 	    {
 	      mNEG1.push_back(k);
 	      mNEG2.push_back(match);
 	      // 360 degrees field of view
-	      thetaNEG.push_back((match->col*(2*M_PI/IMG_WIDTH)));// - M_PI);
+	      thetaNEG.push_back((match->col*(2*M_PI/IMG_WIDTH)) - M_PI);
 	    }
 	  count++;
 	}//end if(match..
@@ -427,4 +426,37 @@ Image CombineImagesVertically(Image im1, Image im2)
       result->pixels[r + im1->rows][c] = im2->pixels[r][c];
 
   return result;
+}
+
+// Rotate the image clockwise (or counter-clockwise if negative).
+// Remember to free the returned image.
+IplImage *rotateImage(const IplImage *src, float angleDegrees)
+{
+  // Create a map_matrix, where the left 2x2 matrix
+  // is the transform and the right 2x1 is the dimensions.
+  float m[6];
+  CvMat M = cvMat(2, 3, CV_32F, m);
+  int w = src->width;
+  int h = src->height;
+  float angleRadians = angleDegrees * ((float)CV_PI / 180.0f);
+  m[0] = (float)( cos(angleRadians) );
+  m[1] = (float)( sin(angleRadians) );
+  m[3] = -m[1];
+  m[4] = m[0];
+  m[2] = w*0.5f;  
+  m[5] = h*0.5f;  
+
+  // Make a spare image for the result
+  CvSize sizeRotated;
+  sizeRotated.width = cvRound(w);
+  sizeRotated.height = cvRound(h);
+
+  // Rotate
+  IplImage *imageRotated = cvCreateImage( sizeRotated,
+					  src->depth, src->nChannels );
+
+  // Transform the image
+  cvGetQuadrangleSubPix( src, imageRotated, &M);
+
+  return imageRotated;
 }
