@@ -188,9 +188,9 @@ int main (int argc, char **argv)
 	{
 	  cout<<"Robot orienting by "<<alpha<<"degrees. ";
 	  if(move(1)>0)
-	    cout<<"and moving forwards"<<endl;
+	    cout<<"and moving forwards by "<<DISTANCE<<"mm"<<endl;
 	  else
-	    cout<<"and moving backwards"<<endl;
+	    cout<<"and moving backwards by "<<DISTANCE<<"mm"<<endl;
 
 	  ArUtil::sleep(1000);
 	  robot.setDeltaHeading(alpha); // orient robot towards goal
@@ -315,6 +315,9 @@ Vector2d FindMatches(Image im1, Keypoint keys1, Image im2, Keypoint keys2, int i
   cout<<"thetaPOS.size(): "<<thetaPOS.size()<<" thetaNEG.size(): "<<thetaNEG.size()<<endl;
 
   double sign=1;
+  if (fabs(atan2(s,c))>=(M_PI/2))
+    sign=-1;
+  else sign=1;
   cout<<"s = "<<s<<", c = "<<c<<endl;
   cout<<"atan2(s,c) = "<<atan2(s,c)<<endl;
   alpha=atan2(s,c);
